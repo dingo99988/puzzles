@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自訂圖片拼圖</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            background-color: #f4f4f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        .controls {
+            margin-bottom: 20px;
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: inline-block;
+        }
+        select, button, input[type="file"] {
+            padding: 8px 12px;
+            margin: 5px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #puzzle-container {
+            position: relative;
+            margin: 0 auto;
+            border: 2px solid #ccc;
+            background-color: #e0e0e0;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            overflow: hidden;
+            /* 寬度和高度會由 JavaScript 動態設定 */
+        }
+        .piece {
+            position: absolute;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-sizing: border-box;
+            cursor: grab;
+            transition: top 0.3s ease, left 0.3s ease; /* 讓交換位置時有滑動動畫 */
+        }
+        .piece:active {
+            cursor: grabbing;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🧩 自訂圖片拼圖</h1>
+    
+    <div class="controls">
+        <input type="file" id="image-upload" accept="image/*">
+        <label for="grid-size">難度：</label>
+        <select id="grid-size">
+            <option value="3">3 x 3 (簡單)</option>
+            <option value="4" selected>4 x 4 (普通)</option>
+            <option value="5">5 x 5 (困難)</option>
+        </select>
+        <button id="start-btn">重新打亂</button>
+    </div>
+
+    <div id="puzzle-container"></div>
+
+    <script>
+        const upload = document.getElementById('image-upload');
+        const container = document.getElementById('puzzle-container');
+        const startBtn = document.getElementById('start-btn');
+        const sizeSelect = document.getElementById('grid-size');
+
+        let img = new Image();
+        let pieces = [];
+        let gridSize = 4;
+        let draggedPiece = null;
+
+        // 當使用者選擇圖片時觸發
+        upload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        initPuzzle();
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // 點擊重新打亂按鈕
+        startBtn.addEventListener('click', () => {
+            if (!img.src) {
+                alert('請先選擇一張圖片！');
+                return;
+            }
+            initPuzzle();
+        });
+
+        // 初始化拼圖
+        function initPuzzle() {
+            gridSize = parseInt(sizeSelect.value);
+            container.innerHTML = ''; // 清空容器
+            pieces = [];
+
+            // 限制圖片最大寬度以適應螢幕
+            let maxWidth = Math.min(window.innerWidth - 40, 600);
+            let scale = maxWidth / img.width;
+            if (scale > 1) scale = 1; // 如果圖片比容器小則不放大
+
+            const finalWidth = Math.floor(img.width * scale);
+            const finalHeight = Math.floor(img.height * scale);
+
+            container.style.width = finalWidth + 'px';
+            container.style.height = finalHeight + 'px';
+
+            const pieceWidth = finalWidth / gridSize;
+            const pieceHeight = finalHeight / gridSize;
+
+            // 產生 0 到 (總片數-1) 的陣列，並隨機打亂順序
+            let positions = Array.from({ length: gridSize * gridSize }, (_, i) => i);
+            positions.sort(() => Math.random() - 0.5);
+
+            for (let i = 0; i < gridSize * gridSize; i++) {
+                const piece = document.createElement('div');
+                piece.classList.add('piece');
+                piece.draggable = true; // 允許拖曳
+
+                // 正確的位置 (用於裁切圖片)
+                const correctRow = Math.floor(i / gridSize);
+                const correctCol = i % gridSize;
+
+                // 當前被打亂的位置 (用於顯示位置)
+                const currentRow = Math.floor(positions[i] / gridSize);
+                const currentCol = positions[i] % gridSize;
+
+                piece.style.width = pieceWidth + 'px';
+                piece.style.height = pieceHeight + 'px';
+                
+                // 設定背景圖片為使用者上傳的圖片
+                piece.style.backgroundImage = `url(${img.src})`;
+                piece.style.backgroundSize = `${finalWidth}px ${finalHeight}px`;
+                // 裁切出對應的區塊
+                piece.style.backgroundPosition = `-${correctCol * pieceWidth}px -${correctRow * pieceHeight}px`;
+
+                // 設定當前顯示的位置
+                piece.style.top = `${currentRow * pieceHeight}px`;
+                piece.style.left = `${currentCol * pieceWidth}px`;
+
+                // 記錄資料狀態，用於檢查是否完成
+                piece.dataset.correct = i;
+                piece.dataset.current = positions[i];
+
+                // 綁定拖放事件
+                piece.addEventListener('dragstart', dragStart);
+                piece.addEventListener('dragover', dragOver);
+                piece.addEventListener('drop', dragDrop);
+                piece.addEventListener('dragenter', (e) => e.preventDefault());
+
+                // 支援觸控螢幕的簡單處理 (可選)
+                piece.addEventListener('touchstart', touchStart, {passive: false});
+                piece.addEventListener('touchend', touchEnd);
+
+                container.appendChild(piece);
+                pieces.push(piece);
+            }
+        }
+
+        // --- 拖放邏輯 ---
+        function dragStart(e) {
+            draggedPiece = this;
+        }
+
+        function dragOver(e) {
+            e.preventDefault(); // 必須阻止預設行為才能允許放置
+        }
+
+        function dragDrop(e) {
+            e.preventDefault();
+            if (draggedPiece === this) return;
+            swapPieces(draggedPiece, this);
+        }
+
+        // --- 觸控邏輯 (簡單支援手機) ---
+        function touchStart(e) {
+            draggedPiece = this;
+        }
+
+        function touchEnd(e) {
+            const touch = e.changedTouches[0];
+            // 找出手指放開時，底下是哪一個拼圖區塊
+            const target = document.elementFromPoint(touch.clientX, touch.clientY);
+            
+            if (target && target.classList.contains('piece') && target !== draggedPiece) {
+                swapPieces(draggedPiece, target);
+            }
+        }
+
+        // 交換兩個拼圖區塊的函數
+        function swapPieces(piece1, piece2) {
+            // 交換畫面上 CSS 的 Top 和 Left 位置
+            const tempTop = piece1.style.top;
+            const tempLeft = piece1.style.left;
+            piece1.style.top = piece2.style.top;
+            piece1.style.left = piece2.style.left;
+            piece2.style.top = tempTop;
+            piece2.style.left = tempLeft;
+
+            // 交換 HTML Dataset 中的目前位置索引
+            const tempCurrent = piece1.dataset.current;
+            piece1.dataset.current = piece2.dataset.current;
+            piece2.dataset.current = tempCurrent;
+
+            // 每次交換後檢查是否獲勝
+            checkWin();
+        }
+
+        // 檢查是否所有拼圖都回到正確位置
+        function checkWin() {
+            const isWin = pieces.every(piece => piece.dataset.current === piece.dataset.correct);
+            if (isWin) {
+                setTimeout(() => {
+                    alert('🎉 恭喜！你完成拼圖了！');
+                }, 350); // 延遲一下讓交換動畫跑完
+            }
+        }
+    </script>
+</body>
+</html>
